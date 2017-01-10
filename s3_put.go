@@ -17,8 +17,8 @@ import (
 // PutFile takes an *PutFileRequest c and tries to send the requested file to s3.
 // It returns any file upload errors.
 func PutFile(c *PutFileRequest) error {
-	const minSize = 5242880   // 5mb
-	const defSize = 104857600 // 100mb
+	const minSize = 5242880    // 5mb
+	const defSize = 1073741824 // 1gb
 	checkAwsRegion()
 
 	var wg sync.WaitGroup
