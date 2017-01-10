@@ -28,8 +28,7 @@ func PutFile(c *PutFileRequest) error {
 	filename := c.S3Filename
 	path := c.LocalFile
 
-	// Min size for each part is 5mb
-
+	// Set partsize
 	size := defSize
 	if int(c.PartSize) > minSize {
 		size = int(c.PartSize)
@@ -45,6 +44,12 @@ func PutFile(c *PutFileRequest) error {
 	if err != nil {
 		fmt.Println("Couldn't open file" + path)
 		return err
+	}
+
+	// Set content type, but default to text/plain; charset=utf-8
+	contentType := "text/plain; charset=utf-8"
+	if c.ContentType != "" {
+		contentType = c.ContentType
 	}
 
 	fileSize := fs.Size()
@@ -68,7 +73,7 @@ func PutFile(c *PutFileRequest) error {
 		Metadata: map[string]*string{
 			"Key": aws.String(pf),
 		},
-		ContentEncoding: aws.String("UTF-8"),
+		ContentType: aws.String(contentType),
 	}
 
 	resp, err := svc.CreateMultipartUpload(params)
