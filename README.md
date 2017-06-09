@@ -1,5 +1,7 @@
 # s3file
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/dwtechnologies/s3file)](https://goreportcard.com/report/github.com/dwtechnologies/s3file)
+
 The s3file package is a heler package to the official aws-go-sdk.
 It will make it easier to
 
