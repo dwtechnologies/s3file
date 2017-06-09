@@ -2,12 +2,10 @@ package s3file
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -20,8 +18,6 @@ func PutFile(c *PutFileRequest) error {
 	const minSize = 5242880    // 5mb
 	const defSize = 1073741824 // 1gb
 	checkAwsRegion()
-
-	var wg sync.WaitGroup
 
 	s3bucket := c.S3Bucket
 	prefix := c.S3Prefix
@@ -36,13 +32,11 @@ func PutFile(c *PutFileRequest) error {
 
 	fs, err := os.Stat(path)
 	if err != nil {
-		fmt.Println("Couldn't stat file" + path)
 		return err
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
-		fmt.Println("Couldn't open file" + path)
 		return err
 	}
 
@@ -62,7 +56,7 @@ func PutFile(c *PutFileRequest) error {
 	finishMultiPart := true
 
 	// Create the parts Channel
-	partsChannel := make(chan *s3.CompletedPart, numParts)
+	partsChannel := make(chan *completedPart, numParts)
 
 	svc := s3.New(session.New(), &aws.Config{Region: aws.String(awsRegion)})
 	pf := filepath.Join(prefix, filename)
@@ -78,7 +72,6 @@ func PutFile(c *PutFileRequest) error {
 
 	resp, err := svc.CreateMultipartUpload(params)
 	if err != nil {
-		fmt.Println("Couldn't create MultipartUploadId")
 		return err
 	}
 	multiPartId := *resp.UploadId
@@ -100,15 +93,15 @@ func PutFile(c *PutFileRequest) error {
 		}
 
 		// Run each of the chunks of the multipart upload as a separate go-routine
-		wg.Add(1)
-		go func(params *s3.UploadPartInput, partCounter int64, partsChannel chan<- *s3.CompletedPart) {
+		go func(params *s3.UploadPartInput, partCounter int64, partsChannel chan<- *completedPart) {
+			completedPart := new(completedPart)
+
 			etag := ""
 			resp, err := svc.UploadPart(params)
 			if err != nil {
+				completedPart.err = err
 				finishMultiPart = false
 				etag = "failed"
-				fmt.Println("MultiPartUploadPart failed. See error below.")
-				fmt.Println(err)
 			} else {
 				etag = *resp.ETag
 			}
@@ -117,8 +110,8 @@ func PutFile(c *PutFileRequest) error {
 				ETag:       aws.String(etag),
 				PartNumber: aws.Int64(partCounter),
 			}
-			partsChannel <- part
-			wg.Done()
+			completedPart.part = part
+			partsChannel <- completedPart
 		}(params, partCounter, partsChannel)
 
 		fileSize = fileSize - chunkSize
@@ -132,18 +125,18 @@ func PutFile(c *PutFileRequest) error {
 			err = io.EOF
 		}
 	}
-	wg.Wait()
-	close(partsChannel)
 
 	// Add all the completed parts a slice of completedParts
 	for part := range partsChannel {
-		if part != nil {
-			completedParts = append(completedParts, part)
+		if part.err != nil {
+			return part.err
 		}
+
+		completedParts = append(completedParts, part.part)
 	}
 
 	// If we got an indication that the multi part upload was finished, finalize it
-	// Otherwise tell s3 to discard the multipart upload completley
+	// Otherwise tell s3 to discard the multipart upload completely
 	if finishMultiPart {
 		params := &s3.CompleteMultipartUploadInput{
 			Bucket:   aws.String(s3bucket),
@@ -168,10 +161,10 @@ func PutFile(c *PutFileRequest) error {
 	}
 	_, err = svc.AbortMultipartUpload(paramsAbort)
 	if err != nil {
-		fmt.Println("Couldn't abort the failed MultipartUpload. Do it manually. ID:", multiPartId)
+		err = fmt.Errorf("Couldn't abort the failed MultipartUpload. Do it manually. ID: %v", multiPartId)
 		return err
 	}
 
-	err = errors.New("MutlipartUploadRequest removed")
+	err = fmt.Errorf("MutlipartUploadRequest removed")
 	return err
 }
