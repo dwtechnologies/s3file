@@ -116,14 +116,14 @@ func PutFile(c *PutFileRequest) error {
 
 		fileSize = fileSize - chunkSize
 		chunkSize = getChunkSizes(fileSize, chunkMaxSize)
-		partCounter++
-		// Read the next chunk of the file
-		_, err = f.Read(chunk)
-
 		// If chunkSize is 0, indicate that we have reached EOF
 		if chunkSize == 0 {
 			err = io.EOF
 		}
+
+		partCounter++
+		// Read the next chunk of the file
+		_, err = f.Read(chunk)
 	}
 
 	// Add all the completed parts a slice of completedParts
