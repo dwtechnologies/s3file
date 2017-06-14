@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -18,6 +19,8 @@ func PutFile(c *PutFileRequest) error {
 	const minSize = 5242880    // 5mb
 	const defSize = 1073741824 // 1gb
 	checkAwsRegion()
+
+	var wg sync.WaitGroup
 
 	s3bucket := c.S3Bucket
 	prefix := c.S3Prefix
@@ -93,6 +96,7 @@ func PutFile(c *PutFileRequest) error {
 		}
 
 		// Run each of the chunks of the multipart upload as a separate go-routine
+		wg.Add(1)
 		go func(params *s3.UploadPartInput, partCounter int64, partsChannel chan<- *completedPart) {
 			completedPart := new(completedPart)
 
@@ -112,6 +116,7 @@ func PutFile(c *PutFileRequest) error {
 			}
 			completedPart.part = part
 			partsChannel <- completedPart
+			wg.Done()
 		}(params, partCounter, partsChannel)
 
 		fileSize = fileSize - chunkSize
@@ -125,6 +130,8 @@ func PutFile(c *PutFileRequest) error {
 		// Read the next chunk of the file
 		_, err = f.Read(chunk)
 	}
+	wg.Wait()
+	close(partsChannel)
 
 	// Add all the completed parts a slice of completedParts
 	for part := range partsChannel {
